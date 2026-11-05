@@ -534,7 +534,8 @@ function getTarget() {
 }
 function tileTarget(tx, ty) {
   const g = gateAt(tx, ty); if (g) return gateTarget(g);
-  if (tileAt(tx, ty) === T.FENCE && tx >= FIELD.x - 1 && tx <= FIELD.x + FIELD.w && ty >= FIELD.y - 1 && ty <= FIELD.y + FIELD.h && !machineAt(tx, ty)) return { tx, ty, label: '🌾 Plan du champ', fn: () => openPanel('plan') };
+  for (const [gb, g] of Object.entries(GARDENS)) if ([T.FENCE, T.WALL].includes(tileAt(tx, ty)) && tx >= g.x - 1 && tx <= g.x + g.w && ty >= g.y - 1 && ty <= g.y + g.h && !gardenMachineAt(tx, ty)) return { tx, ty, label: `🌾 Plan du ${GARDENS[gb].name.toLowerCase()}`, fn: () => { tabs.plan = gb; openPanel('plan'); } };
+  if (tileAt(tx, ty) === T.FENCE && tx >= FIELD.x - 1 && tx <= FIELD.x + FIELD.w && ty >= FIELD.y - 1 && ty <= FIELD.y + FIELD.h && !machineAt(tx, ty)) return { tx, ty, label: '🌾 Plan du champ', fn: () => { tabs.plan = 'field'; openPanel('plan'); } };
   const gm = gardenMachineAt(tx, ty); if (gm) return { tx, ty, label: `${GARDEN_MACHINES[gm.k].icon} ${GARDEN_MACHINES[gm.k].name} — réglages`, fn: () => openPanel('home', GARDENS[gm.b].home) };
   const m = machineAt(tx, ty); if (m) return { tx, ty, label: `${MACHINES[m].icon} ${MACHINES[m].name}${S.mOn[m] === false ? ' (éteint)' : ''} — réglages`, fn: () => openPanel('machines') };
   const b = buildingAt(tx, ty); if (b) return buildingTarget(b);
@@ -877,8 +878,8 @@ const gSel = b => S.gsel[b] && CROPS[S.gsel[b]] ? S.gsel[b] : GARDEN_CROPS[b][0]
 function gardenTarget(b, i, tx, ty) {
   const p = S.gardens[b][i], base = { tx, ty }, cx = (tx + .5) * TILE, cy = (ty + .5) * TILE;
   if (!p.crop) {
-    const k = gSel(b), c = CROPS[k], it = ITEMS[k];
-    return { ...base, label: `Planter ${ic(k)} ${it.name} (🪙${c.seed}) · ${GARDENS[b].name}`, fn: () => {
+    const k = p.plan || gSel(b), c = CROPS[k], it = ITEMS[k];
+    return { ...base, label: `Planter ${ic(k)} ${it.name} (🪙${c.seed})${p.plan ? ' · plan du jardin' : ' · ' + GARDENS[b].name}`, fn: () => {
       if (S.level < c.lvl) return toast(`🔒 ${it.name} : niveau ${c.lvl} requis`);
       if (S.coins < c.seed) return toast('🪙 Pas assez de pièces pour cette graine');
       S.coins -= c.seed; track('plant', k); Object.assign(p, { crop: k, progress: 0, watered: S.weather === 'rain' });
@@ -888,7 +889,7 @@ function gardenTarget(b, i, tx, ty) {
   const it = ITEMS[p.crop];
   if (p.progress >= 1) return { ...base, label: `Récolter ${ic(p.crop)} ${it.name}`, fn: () => {
     const k = p.crop, q = lucky() ? 2 : 1; addItem(k, q); track('harvest', k, q); pushTimed('harvest', q); addXp(CROPS[k].xp); S.stats.harvested++;
-    floatText('+' + q, tx + .5, ty, k); Object.assign(p, newPlot());
+    floatText('+' + q, tx + .5, ty, k); Object.assign(p, newPlot(), { last: k, plan: p.plan });
     emit(cx, cy, 10, { col: [it.col, '#4caf50', '#7bd06b'], speed: 50, life: .6, grav: 110 });
   } };
   const left = (1 - p.progress) * CROPS[p.crop].time / (p.watered ? WATER_BONUS : 1) / buffVal('growth');
@@ -1029,10 +1030,10 @@ function gAutoWater(b, i) { const p = S.gardens[b][i]; if (p.crop && p.progress 
 function gAutoHarvest(b, i) {
   const p = S.gardens[b][i]; if (!p.crop || p.progress < 1) return false;
   const k = p.crop, q = lucky() ? 2 : 1; addItem(k, q); track('harvest', k, q); addXp(CROPS[k].xp); S.stats.harvested++;
-  Object.assign(p, newPlot(), { last: k }); return k;
+  Object.assign(p, newPlot(), { last: k, plan: p.plan }); return k;
 }
 function gAutoReplant(b, i) {
-  const p = S.gardens[b][i], k = p.last; if (p.crop || !k) return false;
+  const p = S.gardens[b][i], k = p.plan || p.last; if (p.crop || !k) return false;
   const c = CROPS[k]; if (S.level < c.lvl || S.coins < c.seed) return false;
   S.coins -= c.seed; track('plant', k); Object.assign(p, { crop: k, progress: 0, watered: S.weather === 'rain' }); return true;
 }
@@ -1050,7 +1051,8 @@ findTask = function (id, r) {
   const z = WORKERS[id].zone; if (!z.startsWith('g_')) return _findTask(id, r);
   const b = z.slice(2); let best = null, bd = 1e9;
   S.gardens[b].forEach((p, i) => {
-    const want = (p.crop && p.progress >= 1) || (p.crop && p.progress < 1 && !p.watered) || (!p.crop && p.last && S.coins >= CROPS[p.last].seed && S.level >= CROPS[p.last].lvl);
+    const nk = p.plan || p.last;
+    const want = (p.crop && p.progress >= 1) || (p.crop && p.progress < 1 && !p.watered) || (!p.crop && nk && S.coins >= CROPS[nk].seed && S.level >= CROPS[nk].lvl);
     if (!want) return; const [tx, ty] = gardenPos(b, i), d = Math.hypot(tx + .5 - r.x, ty + .55 - r.y);
     if (d < bd) { bd = d; best = { x: tx + .5, y: ty + .55, gb: b, gi: i }; }
   });

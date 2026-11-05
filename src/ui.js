@@ -83,7 +83,19 @@ function renderDialog() {
 }
 
 // ---------- Panneaux ----------
-let tabs = { market: 'sell', bag: 'all', journal: 'story', hugo: 'build' }, planBrush = 'ble', planPaint = false;
+let tabs = { market: 'sell', bag: 'all', journal: 'story', hugo: 'build', plan: 'field' }, planBrushes = { field: 'ble' }, planPaint = false;
+function planArea(a) {
+  if (a === 'field') return { open: true, plots: S.plots, w: FIELD.w, h: FIELD.h, crops: CROP_KEYS, usable: i => i < unlocked(), cell: (r, c) => plotIndexAt(FIELD.x + c, FIELD.y + r),
+    replant: autoReplant, top: '↑ fond du champ', bottom: '↓ entrée du champ', who: 'Le <b>semoir</b>, <b>Léa</b>',
+    status: `${machineOn('semoir') ? '✅ Semoir en marche' : '⚠️ Pas de semoir actif'} · ${S.staff.lea && !S.staff.lea.strike ? '✅ Léa au travail' : '⚠️ Léa pas embauchée'}` };
+  const g = GARDENS[a], wk = Object.keys(WORKERS).find(id => WORKERS[id].zone === 'g_' + a), W = WORKERS[wk];
+  return { open: zoneOpen(a), plots: S.gardens[a], w: g.w, h: g.h, crops: GARDEN_CROPS[a], usable: () => true, cell: (r, c) => r * g.w + c,
+    replant: i => gAutoReplant(a, i), top: g.gate === 'top' ? '↑ entrée du jardin' : '↑ fond du jardin', bottom: g.gate === 'top' ? '↓ fond du jardin' : '↓ entrée du jardin',
+    who: `Le <b>récolteur</b>, <b>${W.name}</b>`,
+    status: `${gmOn(a, 'arroseur') ? '✅ Arroseur en marche' : '⚠️ Pas d\'arroseur'} · ${gmOn(a, 'recolteur') ? '✅ Récolteur en marche' : '⚠️ Pas de récolteur'} · ${S.staff[wk] && !S.staff[wk].strike ? `✅ ${W.name} au travail` : `⚠️ ${W.name} pas embauché(e)`} (machines et jardinier à la ${HOMES[g.home].name})` };
+}
+function curBrush(a) { const A = planArea(a); if (!(a in planBrushes)) planBrushes[a] = A.crops[0]; return planBrushes[a]; }
+const planPlots = a => a === 'field' ? S.plots : S.gardens[a];
 const tabBar = (panelId, list) => `<div class="tabs">${list.map(([k, l]) => `<button class="tab${tabs[panelId] === k ? ' on' : ''}" data-act="tab" data-k="${panelId}:${k}">${l}</button>`).join('')}</div>`;
 const PANELS = {
   market: ['🛒 Marché de Margot', () => {
@@ -212,35 +224,39 @@ const PANELS = {
       ${H.garden ? gardenAutoHTML(H.garden) : ''}
       ${Object.entries(ANIMALS).some(([, A]) => A.shop === h) ? `<h3>🐾 Animaux de la zone</h3><p class="muted">Ils vivent en liberté près de la cabane. Nourris-les sur place pour récolter leurs produits (la mangeoire et le collecteur s'en occupent aussi).</p><div class="cards">${Object.entries(ANIMALS).filter(([, A]) => A.shop === h).map(([k]) => animalCard(k)).join('')}</div>` : ''}`;
   }],
-  plan: ['🌾 Plan du champ', () => {
-    const rows = [];
-    for (let y = FIELD.y; y < FIELD.y + FIELD.h; y++) {
+  plan: ['🌾 Plans des cultures', () => {
+    const area = tabs.plan || 'field', A = planArea(area);
+    const tb = tabBar('plan', [['field', '🌾 Champ principal'], ...Object.keys(GARDENS).map(g => [g, `${ZONES[g].icon} ${GARDENS[g].name}${zoneOpen(g) ? '' : ' 🔒'}`])]);
+    if (!A.open) return tb + `<p class="muted">🔒 Ce jardin se trouve dans une zone encore fermée (${ZONES[area].name}, niveau ${ZONES[area].lvl}).</p>`;
+    const brush = curBrush(area), rows = [];
+    for (let r = 0; r < A.h; r++) {
       const cells = [];
-      for (let x = FIELD.x; x < FIELD.x + FIELD.w; x++) {
-        const i = plotIndexAt(x, y), p = S.plots[i], lock = i >= unlocked();
+      for (let c = 0; c < A.w; c++) {
+        const i = A.cell(r, c), p = A.plots[i], lock = !A.usable(i);
         const st = p.crop ? (p.progress >= 1 ? 'Mûr' : Math.round(p.progress * 100) + ' %') : 'vide';
-        cells.push(`<div class="pc${lock ? ' lock' : ''}${p.plan ? ' has' : ''}" data-act="${lock ? '' : 'planCell'}" data-i="${i}" title="${lock ? 'Parcelle en friche' : (p.plan ? 'Plan : ' + ITEMS[p.plan].name : 'Pas de plan') + ' · actuellement ' + (p.crop ? ITEMS[p.crop].name + ' (' + st + ')' : 'vide')}">
+        cells.push(`<div class="pc${lock ? ' lock' : ''}${p.plan ? ' has' : ''}" data-act="${lock ? '' : 'planCell'}" data-k="${area}" data-i="${i}" title="${lock ? 'Parcelle en friche' : (p.plan ? 'Plan : ' + ITEMS[p.plan].name : 'Pas de plan') + ' · actuellement ' + (p.crop ? ITEMS[p.crop].name + ' (' + st + ')' : 'vide')}">
           ${lock ? '🌿' : p.plan ? `<img src="${ICON_URL[p.plan]}" alt="">` : '<span class="none">—</span>'}
           ${!lock && p.crop ? `<img class="now" src="${ICON_URL[p.crop]}" alt=""><small>${st}</small>` : ''}</div>`);
       }
-      const ri = plotIndexAt(FIELD.x, y), rowLocked = ri >= unlocked();
-      rows.push(`<div class="prow">${cells.join('')}<button class="btn ghost sm" data-act="planRow" data-i="${ri}" ${rowLocked ? 'disabled' : ''}>Rangée ←</button></div>`);
+      const ri = A.cell(r, 0);
+      rows.push(`<div class="prow">${cells.join('')}<button class="btn ghost sm" data-act="planRow" data-k="${area}" data-i="${Math.min(ri, A.cell(r, A.w - 1))}" ${A.usable(ri) ? '' : 'disabled'}>Rangée ←</button></div>`);
     }
+    const idx = A.plots.map((_, i) => i).filter(A.usable);
     const counts = {}; let seedCost = 0, perHour = 0;
-    for (let i = 0; i < unlocked(); i++) { const k = S.plots[i].plan; if (!k) continue; counts[k] = (counts[k] || 0) + 1; seedCost += CROPS[k].seed; perHour += (ITEMS[k].price - CROPS[k].seed) * 3600 / (CROPS[k].time / WATER_BONUS); }
-    const empties = plotIdx().filter(i => !S.plots[i].crop && S.plots[i].plan);
-    const nowCost = empties.reduce((s, i) => s + CROPS[S.plots[i].plan].seed, 0);
-    return `<p class="muted">Choisis une culture, puis clique (ou glisse) sur les parcelles. Le <b>semoir</b>, <b>Léa</b> et toi-même planterez automatiquement la culture prévue sur chaque parcelle vide.</p>
-      <div class="palette">${CROP_KEYS.map(k => { const lk = S.level < CROPS[k].lvl; return `<button class="pb${planBrush === k ? ' on' : ''}" data-act="${lk ? '' : 'brush'}" data-k="${k}" ${lk ? 'disabled' : ''} title="${ITEMS[k].name}">${lk ? '🔒' : `<img src="${ICON_URL[k]}" alt="">`}<small>${lk ? 'Niv.' + CROPS[k].lvl : ITEMS[k].name}</small></button>`; }).join('')}
-        <button class="pb${planBrush === null ? ' on' : ''}" data-act="brush" data-k="">🧽<small>Effacer</small></button></div>
-      <div class="fieldgrid"><div class="fhead">↑ fond du champ</div>${rows.join('')}<div class="fhead">↓ entrée du champ</div></div>
-      <div class="row"><button class="btn ghost" data-act="planAll">Tout remplir avec ${planBrush ? ITEMS[planBrush].name.toLowerCase() : 'rien'}</button>
-        <button class="btn ghost" data-act="planCopy">Copier les cultures actuelles</button>
-        <button class="btn ghost" data-act="planClear">Tout effacer</button>
-        <button class="btn gold" data-act="planNow" ${empties.length && S.coins >= nowCost ? '' : 'disabled'}>🌱 Planter le plan maintenant (${empties.length} parcelle${empties.length > 1 ? 's' : ''} · 🪙${fmtN(nowCost)})</button></div>
+    for (const i of idx) { const k = A.plots[i].plan; if (!k) continue; counts[k] = (counts[k] || 0) + 1; seedCost += CROPS[k].seed; perHour += (ITEMS[k].price - CROPS[k].seed) * 3600 / (CROPS[k].time / WATER_BONUS); }
+    const empties = idx.filter(i => !A.plots[i].crop && A.plots[i].plan);
+    const nowCost = empties.reduce((t, i) => t + CROPS[A.plots[i].plan].seed, 0);
+    return tb + `<p class="muted">Choisis une plante, puis clique (ou glisse) sur les parcelles. ${A.who} et toi-même planterez automatiquement la plante prévue sur chaque parcelle vide.</p>
+      <div class="palette">${A.crops.map(k => { const lk = S.level < CROPS[k].lvl; return `<button class="pb${brush === k ? ' on' : ''}" data-act="${lk ? '' : 'brush'}" data-k="${area}:${k}" ${lk ? 'disabled' : ''} title="${ITEMS[k].name}">${lk ? '🔒' : `<img src="${ICON_URL[k]}" alt="">`}<small>${lk ? 'Niv.' + CROPS[k].lvl : ITEMS[k].name}</small></button>`; }).join('')}
+        <button class="pb${brush === null ? ' on' : ''}" data-act="brush" data-k="${area}:">🧽<small>Effacer</small></button></div>
+      <div class="fieldgrid"><div class="fhead">${A.top}</div>${rows.join('')}<div class="fhead">${A.bottom}</div></div>
+      <div class="row"><button class="btn ghost" data-act="planAll" data-k="${area}">Tout remplir avec ${brush ? ITEMS[brush].name.toLowerCase() : 'rien'}</button>
+        <button class="btn ghost" data-act="planCopy" data-k="${area}">Copier les cultures actuelles</button>
+        <button class="btn ghost" data-act="planClear" data-k="${area}">Tout effacer</button>
+        <button class="btn gold" data-act="planNow" data-k="${area}" ${empties.length && S.coins >= nowCost ? '' : 'disabled'}>🌱 Planter le plan maintenant (${empties.length} parcelle${empties.length > 1 ? 's' : ''} · 🪙${fmtN(nowCost)})</button></div>
       <div class="planinfo"><div>${Object.entries(counts).map(([k, n]) => `${ic(k)} ×${n}`).join(' · ') || 'Aucune parcelle planifiée'}</div>
         <div>Graines pour tout replanter : <b>🪙 ${fmtN(seedCost)}</b> · Bénéfice estimé si tout est arrosé : <b>≈ 🪙 ${fmtN(perHour)} / heure</b></div>
-        <div class="muted">${machineOn('semoir') ? '✅ Semoir en marche' : '⚠️ Pas de semoir actif'} · ${S.staff.lea && !S.staff.lea.strike ? '✅ Léa au travail' : '⚠️ Léa pas embauchée'}</div></div>`;
+        <div class="muted">${A.status}</div></div>`;
   }],
   perso: ['🧍 Personnage', () => {
     const slots = jewelSlots(), total = Object.keys(S.ach).length;
@@ -292,7 +308,7 @@ const PANELS = {
       <li>🌲 Forêt : bois, champignons, baies · 🏖️ Plage : pêche et coquillages · 🏔️ Montagne : pierre, fer, cristal</li>
       <li>🎣 <b>Pêche</b> : face à la mer, appuie sur E, puis encore quand <b>!</b> apparaît</li>
       <li>⛏️ Les rochers se cassent en plusieurs coups</li>
-      <li>🌾 <b>Plan du champ</b> (<b>F</b>) : choisis la culture de chaque parcelle ; semoir, Léa et toi la replantez automatiquement</li>
+      <li>🌾 <b>Plans des cultures</b> (<b>F</b>) : choisis la plante de chaque parcelle du champ et des 3 jardins de biome ; machines, employés et toi la replantez automatiquement</li>
       <li>🌱 <b>Jardins de biome</b> : forêt, plage et montagne ont chacune un jardin clôturé avec des plantes qui ne poussent que là. La barre de graines s'adapte à la zone. Chaque cabane vend un arroseur et un récolteur pour son jardin, et propose un jardinier.</li>
       <li>✖ Une fabrication en cours peut être <b>annulée</b> dans l'atelier : les ingrédients sont rendus</li>
       <li>🧪 <b>Boutique</b> du marché : café (vitesse) et engrais (pousse). Les plats (tarte, soupe, ragoût, gâteau) se <b>mangent</b> pour des bonus. Barre en bas à droite.</li>
@@ -310,7 +326,7 @@ const PANELS = {
 };
 function gardenAutoHTML(b) {
   const G = GARDENS[b], ps = S.gardens[b], grown = ps.filter(p => p.crop).length;
-  return `<h3>${ZONES[b].icon} ${G.name} — automatisation</h3><p class="muted">${grown}/${ps.length} parcelles cultivées. Le récolteur et le jardinier replantent la même espèce : pour changer de plante, récolte toi-même et plante autre chose.</p><div class="cards">${Object.entries(GARDEN_MACHINES).map(([m, M]) => {
+  return `<h3>${ZONES[b].icon} ${G.name} — automatisation</h3><p class="muted">${grown}/${ps.length} parcelles cultivées. Le récolteur et le jardinier replantent selon le <b>plan du jardin</b> (ou la même plante si la parcelle n'a pas de plan).</p><div class="row"><button class="btn ghost" data-act="openPlan" data-k="${b}">🌾 Ouvrir le plan du jardin</button></div><div class="cards">${Object.entries(GARDEN_MACHINES).map(([m, M]) => {
     const own = S.gmach[b] && S.gmach[b][m], key = b + m, c = M.cost(b);
     return `<div class="card"><h4>${M.icon} ${M.name}</h4><p>${M.desc}</p>${own ? `<div class="row"><button class="btn ${S.gmOn[key] === false ? 'ghost' : ''}" data-act="toggleGM" data-k="${key}">${S.gmOn[key] === false ? '⏸️ Éteint' : '▶️ En marche'}</button></div>` : `<p>${reqHTML(c)}</p><div class="row"><button class="btn gold" data-act="buyGM" data-k="${b}.${m}" ${canPay(c) ? '' : 'disabled'}>Installer</button></div>`}</div>`;
   }).join('')}</div>`;
@@ -378,9 +394,9 @@ function sell(k, q) { q = Math.min(q, have(k)); if (q <= 0) return 0; const g = 
 $('#panel').addEventListener('click', e => { if (e.target.id === 'panel') closePanel(); });
 $('#dialog').addEventListener('click', () => advanceDialog());
 // Peinture du plan en glissant
-document.addEventListener('pointerdown', e => { const c = e.target.closest('.pc[data-act=planCell]'); if (c) { planPaint = true; S.plots[+c.dataset.i].plan = planBrush; renderPanel(); } });
+document.addEventListener('pointerdown', e => { const c = e.target.closest('.pc[data-act=planCell]'); if (c) { planPaint = true; planPlots(c.dataset.k)[+c.dataset.i].plan = curBrush(c.dataset.k); renderPanel(); } });
 addEventListener('pointerup', () => { planPaint = false; });
-document.addEventListener('pointerover', e => { if (!planPaint) return; const c = e.target.closest('.pc[data-act=planCell]'); if (c) { S.plots[+c.dataset.i].plan = planBrush; renderPanel(); } });
+document.addEventListener('pointerover', e => { if (!planPaint) return; const c = e.target.closest('.pc[data-act=planCell]'); if (c) { planPlots(c.dataset.k)[+c.dataset.i].plan = curBrush(c.dataset.k); renderPanel(); } });
 document.addEventListener('input', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   if (el.dataset.act === 'zoomRange') setZoom(+el.value / 100);
@@ -443,13 +459,14 @@ document.addEventListener('click', e => {
     case 'hire': { const W = WORKERS[k]; if (!S.staff[k] && S.level >= W.lvl && (!W.need || S.gates[W.need]) && S.coins >= W.hire) { S.coins -= W.hire; S.staff[k] = { strike: false, lvl: 1, xp: 0 }; track('hire', k); delete WRT[k]; toast(`👷 ${W.name} rejoint ta ferme !`, 'gold'); setTimeout(() => say(k, `Merci de m'embaucher ! ${W.desc} Mon salaire : ${W.wage} pièces par jour. Plus je travaille, plus je deviens efficace !`), 300); } break; }
     case 'fire': if (confirm(`Renvoyer ${WORKERS[k].name} ?`)) { delete S.staff[k]; delete WRT[k]; } break;
     case 'payNow': { const t = wagesTotal(); if (S.coins >= t) { S.coins -= t; hiredWorkers().forEach(id => S.staff[id].strike = false); toast('👷 Salaires payés, tout le monde reprend le travail !'); } break; }
-    case 'brush': planBrush = k || null; break;
-    case 'planCell': { const p = S.plots[i]; p.plan = planBrush; break; }
-    case 'planRow': { for (let j = i; j < i + FIELD.w && j < unlocked(); j++) S.plots[j].plan = planBrush; break; }
-    case 'planAll': for (let j = 0; j < unlocked(); j++) S.plots[j].plan = planBrush; break;
-    case 'planClear': for (let j = 0; j < MAX_PLOTS; j++) S.plots[j].plan = null; break;
-    case 'planCopy': for (let j = 0; j < unlocked(); j++) { const p = S.plots[j]; p.plan = p.crop || p.last || p.plan || null; } break;
-    case 'planNow': { let n = 0; for (const j of plotIdx()) if (autoReplant(j)) n++; if (n) toast(`🌱 ${n} parcelle${n > 1 ? 's' : ''} plantée${n > 1 ? 's' : ''} selon le plan`); break; }
+    case 'brush': { const [a, c] = k.split(':'); planBrushes[a] = c || null; break; }
+    case 'planCell': planPlots(k)[i].plan = curBrush(k); break;
+    case 'planRow': { const A = planArea(k); for (let j = i; j < i + A.w; j++) if (A.usable(j)) A.plots[j].plan = curBrush(k); break; }
+    case 'planAll': { const A = planArea(k); A.plots.forEach((p, j) => { if (A.usable(j)) p.plan = curBrush(k); }); break; }
+    case 'planClear': planPlots(k).forEach(p => p.plan = null); break;
+    case 'planCopy': { const A = planArea(k); A.plots.forEach((p, j) => { if (A.usable(j)) p.plan = p.crop || p.last || p.plan || null; }); break; }
+    case 'planNow': { const A = planArea(k); let n = 0; A.plots.forEach((p, j) => { if (A.usable(j) && A.replant(j)) n++; }); if (n) toast(`🌱 ${n} parcelle${n > 1 ? 's' : ''} plantée${n > 1 ? 's' : ''} selon le plan`); break; }
+    case 'openPlan': tabs.plan = k; openPanel('plan'); break;
     case 'repair': { const g = GATES[k]; if (!S.gates[k] && canPay(g.req)) { pay(g.req); closePanel(); openGate(k); save(); } break; }
     case 'reset': if (confirm('Effacer définitivement ta partie et recommencer ?')) { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} location.reload(); } break;
   }
@@ -502,7 +519,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyO') return toggle('options');
   if (e.code === 'KeyH') return toggle('help');
   if (e.code === 'KeyP') return toggle('staff');
-  if (e.code === 'KeyF') return toggle('plan');
+  if (e.code === 'KeyF') { if (panel === 'plan') return closePanel(); tabs.plan = hotbarGarden() || 'field'; return openPanel('plan'); }
   if (e.key && e.key.toLowerCase() === 'm') return toggle('machines');
   const m = e.code.match(/^(Digit|Numpad)([1-7])$/);
   if (m) { const gz = hotbarGarden(), list = gz ? GARDEN_CROPS[gz] : CROP_KEYS, k = list[+m[2] - 1]; if (!k) return; if (S.level < CROPS[k].lvl) toast(`🔒 Débloqué au niveau ${CROPS[k].lvl}`); else if (gz) S.gsel[gz] = k; else S.selected = k; return; }

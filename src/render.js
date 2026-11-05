@@ -96,7 +96,7 @@ function draw(target) {
     if (!p.crop && p.plan) { ctx.globalAlpha = .5 + Math.sin(now / 500 + i) * .15; ctx.drawImage(SPR.icons[p.plan], tx * TILE + 3, ty * TILE + 3, 10, 10); ctx.globalAlpha = 1; }
   }
   // Jardins de biome
-  for (const [b, g] of Object.entries(GARDENS)) { if (!inView(g.x, g.y)) continue; S.gardens[b].forEach((p, i) => { const tx = g.x + i % g.w, ty = g.y + Math.floor(i / g.w); ctx.drawImage(SPR.soil[b][p.crop && p.watered ? 1 : 0], tx * TILE, ty * TILE); }); }
+  for (const [b, g] of Object.entries(GARDENS)) { if (!inView(g.x, g.y)) continue; S.gardens[b].forEach((p, i) => { const tx = g.x + i % g.w, ty = g.y + Math.floor(i / g.w); ctx.drawImage(SPR.soil[b][p.crop && p.watered ? 1 : 0], tx * TILE, ty * TILE); if (!p.crop && p.plan) { ctx.globalAlpha = .5 + Math.sin(now / 500 + i) * .15; ctx.drawImage(SPR.icons[p.plan], tx * TILE + 3, ty * TILE + 3, 10, 10); ctx.globalAlpha = 1; } }); }
   // Ressources au sol (non solides, dessinées à plat)
   for (const n of NODES) {
     if (!inView(n.x, n.y) || NODE_INFO[n.kind].solid) continue;
