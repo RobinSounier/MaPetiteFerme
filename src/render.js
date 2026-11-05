@@ -96,7 +96,7 @@ function draw(target) {
     if (!p.crop && p.plan) { ctx.globalAlpha = .5 + Math.sin(now / 500 + i) * .15; ctx.drawImage(SPR.icons[p.plan], tx * TILE + 3, ty * TILE + 3, 10, 10); ctx.globalAlpha = 1; }
   }
   // Jardins de biome
-  for (const [b, g] of Object.entries(GARDENS)) { if (!inView(g.x, g.y)) continue; S.gardens[b].forEach((p, i) => { const tx = g.x + i % g.w, ty = g.y + Math.floor(i / g.w); ctx.drawImage(p.crop && p.watered ? SPR.soilWet : SPR.soilDry, tx * TILE, ty * TILE); }); }
+  for (const [b, g] of Object.entries(GARDENS)) { if (!inView(g.x, g.y)) continue; S.gardens[b].forEach((p, i) => { const tx = g.x + i % g.w, ty = g.y + Math.floor(i / g.w); ctx.drawImage(SPR.soil[b][p.crop && p.watered ? 1 : 0], tx * TILE, ty * TILE); }); }
   // Ressources au sol (non solides, dessinées à plat)
   for (const n of NODES) {
     if (!inView(n.x, n.y) || NODE_INFO[n.kind].solid) continue;
@@ -132,6 +132,7 @@ function draw(target) {
   for (const a of S.animals) if (inView(a.x, a.y)) ents.push({ y: a.y * TILE + 4, a });
   NPCS.forEach((n, i) => { if (inView(n.x, n.y)) ents.push({ y: (n.y + .2) * TILE, npc: n, i }); });
   for (let r = 0; r < (S.machines.arroseur || 0) && r < FIELD.h; r++) ents.push({ y: (FIELD.y + FIELD.h - r) * TILE - 1, spr: r });
+  for (const [b, g] of Object.entries(GARDENS)) if (inView(g.x, g.y)) { if (S.gmach[b] && S.gmach[b].arroseur) ents.push({ y: (g.y + 2) * TILE - 1, gspr: b }); if (S.gmach[b] && S.gmach[b].recolteur) ents.push({ y: (g.y + 2) * TILE - 1, grec: b }); }
   for (const k of Object.keys(MACHINE_SPOTS)) if (S.machines[k]) ents.push({ y: MACHINE_SPOTS[k][1] * TILE + 6, mach: k });
   for (const id of hiredWorkers()) { const r = wrt(id); if (inView(r.x, r.y)) ents.push({ y: (r.y + .2) * TILE, wk: id }); }
   ents.push({ y: (P.y + .2) * TILE, player: true });
@@ -208,6 +209,16 @@ function draw(target) {
       ctx.drawImage(SPR.sprinkler[on ? Math.floor(now / 200) % 2 : 0], x * TILE + 3, y * TILE - 2);
       if (on && Math.random() < .25) emit(x * TILE + 4, y * TILE + 2, 2, { col: ['#8cc8f0', '#d8f1ff'], speed: 70 + Math.random() * 40, life: .9, grav: 80, angle: Math.PI + .5, spread: .7, jitter: 1 });
       if (target && target.tx === x && target.ty === y) brackets(x * TILE, y * TILE - 2, TILE, TILE + 2, hl);
+    } else if (e.gspr) {
+      const g = GARDENS[e.gspr], on = gmOn(e.gspr, 'arroseur'), x = g.x - 1, y = g.y + 1;
+      ctx.drawImage(SPR.sprinkler[on ? Math.floor(now / 200) % 2 : 0], x * TILE + 3, y * TILE - 2);
+      if (on && Math.random() < .25) emit(x * TILE + 12, y * TILE + 2, 2, { col: ['#8cc8f0', '#d8f1ff'], speed: 60 + Math.random() * 30, life: .9, grav: 80, angle: -.5, spread: .8, jitter: 1 });
+      if (target && target.tx === x && target.ty === y) brackets(x * TILE, y * TILE - 2, TILE, TILE + 2, hl);
+    } else if (e.grec) {
+      const g = GARDENS[e.grec], on = gmOn(e.grec, 'recolteur'), x = g.x + g.w, y = g.y + 1, s = SPR.basket;
+      ctx.drawImage(s, x * TILE, y * TILE + 2 + (on ? Math.round(Math.sin(now / 120)) : 0));
+      if (!on) label('OFF', (x + .5) * TILE, y * TILE - 2, 'rgba(160,30,30,.9)');
+      if (target && target.tx === x && target.ty === y) brackets(x * TILE, y * TILE, TILE, TILE, hl);
     } else if (e.mach) {
       const k = e.mach, [mx, my] = MACHINE_SPOTS[k], on = machineOn(k);
       const s = k === 'moissonneuse' ? SPR.harvester : k === 'semoir' ? SPR.seeder : k === 'mangeoire' ? SPR.trough[on ? 1 : 0] : SPR.basket;

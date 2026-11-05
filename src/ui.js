@@ -143,7 +143,7 @@ const PANELS = {
     if (!w) return `<p>Ce bâtiment n'est pas encore construit. Commande-le chez Hugo.</p>`;
     const slots = w.slots.map((sl, i) => {
       if (sl.ready) { const r = W.recipes[sl.job]; return `<div class="talkbox"><div style="flex:1"><b>Poste ${i + 1} — ✅ ${ic(r.out)} ${ITEMS[r.out].name} est prêt !</b></div><button class="btn" data-act="collectWs" data-k="${k}" data-i="${i}">🧺 Récupérer</button></div>`; }
-      if (sl.job != null) { const r = W.recipes[sl.job]; return `<div class="talkbox"><div style="flex:1"><b>Poste ${i + 1} — ⏳ ${ic(r.out)} ${ITEMS[r.out].name}</b> — ${fmt((1 - sl.progress) * r.time)}<div class="pbar"><div style="width:${(sl.progress * 100).toFixed(1)}%"></div></div></div></div>`; }
+      if (sl.job != null) { const r = W.recipes[sl.job]; return `<div class="talkbox"><div style="flex:1"><b>Poste ${i + 1} — ⏳ ${ic(r.out)} ${ITEMS[r.out].name}</b> — ${fmt((1 - sl.progress) * r.time)}<div class="pbar"><div style="width:${(sl.progress * 100).toFixed(1)}%"></div></div></div><button class="btn ghost" data-act="wsCancel" data-k="${k}" data-i="${i}" title="Rembourse tous les ingrédients">✖ Annuler</button></div>`; }
       return `<div class="talkbox"><div><b>Poste ${i + 1}</b> — libre, choisis une recette ci-dessous.</div></div>`;
     }).join('');
     const free = w.slots.some(sl => sl.job == null), c2 = wsSlotCost(W);
@@ -209,6 +209,7 @@ const PANELS = {
     return `<div class="talkbox"><img src="${SPR.portrait[H.npc]}" alt=""><div><b>${N.name}</b> <small>${N.role}</small><p>${h === 'mairie' ? 'Bienvenue au bureau d\'embauche de la ferme. Ces gens cherchent du travail chez toi.' : 'Voici ceux qui veulent travailler dans ma zone. Et je peux améliorer ton outil.'}</p></div></div>
       <div class="row"><span class="chipL">💰 Salaires totaux : <b>${fmtN(tot)} 🪙 / jour</b></span>${strike ? `<button class="btn red" data-act="payNow" ${S.coins >= tot ? '' : 'disabled'}>Payer les salaires en retard (${fmtN(tot)} 🪙)</button>` : ''}</div>
       <h3>Employés</h3><div class="cards">${Object.keys(WORKERS).filter(id => WORKERS[id].home === h).map(id => staffCard(id, true)).join('')}</div>${tool}
+      ${H.garden ? gardenAutoHTML(H.garden) : ''}
       ${Object.entries(ANIMALS).some(([, A]) => A.shop === h) ? `<h3>🐾 Animaux de la zone</h3><p class="muted">Ils vivent en liberté près de la cabane. Nourris-les sur place pour récolter leurs produits (la mangeoire et le collecteur s'en occupent aussi).</p><div class="cards">${Object.entries(ANIMALS).filter(([, A]) => A.shop === h).map(([k]) => animalCard(k)).join('')}</div>` : ''}`;
   }],
   plan: ['🌾 Plan du champ', () => {
@@ -292,7 +293,8 @@ const PANELS = {
       <li>🎣 <b>Pêche</b> : face à la mer, appuie sur E, puis encore quand <b>!</b> apparaît</li>
       <li>⛏️ Les rochers se cassent en plusieurs coups</li>
       <li>🌾 <b>Plan du champ</b> (<b>F</b>) : choisis la culture de chaque parcelle ; semoir, Léa et toi la replantez automatiquement</li>
-      <li>🌱 <b>Jardins de biome</b> : forêt, plage et montagne ont chacune un jardin avec des plantes qui ne poussent que là. La barre de graines s'adapte à la zone.</li>
+      <li>🌱 <b>Jardins de biome</b> : forêt, plage et montagne ont chacune un jardin clôturé avec des plantes qui ne poussent que là. La barre de graines s'adapte à la zone. Chaque cabane vend un arroseur et un récolteur pour son jardin, et propose un jardinier.</li>
+      <li>✖ Une fabrication en cours peut être <b>annulée</b> dans l'atelier : les ingrédients sont rendus</li>
       <li>🧪 <b>Boutique</b> du marché : café (vitesse) et engrais (pousse). Les plats (tarte, soupe, ragoût, gâteau) se <b>mangent</b> pour des bonus. Barre en bas à droite.</li>
       <li>💍 <b>Bijoux</b> forgés à la Forge : équipe-les (<b>K</b>) pour des pouvoirs permanents</li>
       <li>📖 <b>Livre des objectifs</b> (<b>L</b>) : des exploits à accomplir, certains chronométrés, avec récompenses et vêtements rares</li>
@@ -306,6 +308,13 @@ const PANELS = {
       <li>⌨️ <b>J</b> journal · <b>I</b> sac · <b>C</b> carte · <b>O</b> options · <b>H</b> aide · <b>Échap</b> fermer · molette = zoom</li></ul>
       <div class="row"><button class="btn" data-act="close">C'est parti ! 🚜</button></div>`],
 };
+function gardenAutoHTML(b) {
+  const G = GARDENS[b], ps = S.gardens[b], grown = ps.filter(p => p.crop).length;
+  return `<h3>${ZONES[b].icon} ${G.name} — automatisation</h3><p class="muted">${grown}/${ps.length} parcelles cultivées. Le récolteur et le jardinier replantent la même espèce : pour changer de plante, récolte toi-même et plante autre chose.</p><div class="cards">${Object.entries(GARDEN_MACHINES).map(([m, M]) => {
+    const own = S.gmach[b] && S.gmach[b][m], key = b + m, c = M.cost(b);
+    return `<div class="card"><h4>${M.icon} ${M.name}</h4><p>${M.desc}</p>${own ? `<div class="row"><button class="btn ${S.gmOn[key] === false ? 'ghost' : ''}" data-act="toggleGM" data-k="${key}">${S.gmOn[key] === false ? '⏸️ Éteint' : '▶️ En marche'}</button></div>` : `<p>${reqHTML(c)}</p><div class="row"><button class="btn gold" data-act="buyGM" data-k="${b}.${m}" ${canPay(c) ? '' : 'disabled'}>Installer</button></div>`}</div>`;
+  }).join('')}</div>`;
+}
 function hotbarGarden() { const P = S.player, b = biomeAt(Math.floor(P.x), Math.floor(P.y)); return GARDENS[b] ? b : null; }
 function animalCard(k) {
   const A = ANIMALS[k], locked = S.level < A.lvl, n = S.animals.filter(a => a.type === k).length, c = animalCost(k), full = n >= MAX_PER_ANIMAL;
@@ -397,6 +406,9 @@ document.addEventListener('click', e => {
     case 'buyCos': { const [sl, id] = k.split('.'), C_ = COSMETICS[sl][id]; if (!S.cos.owned[k] && C_.price != null && S.coins >= C_.price && (!C_.lvl || S.level >= C_.lvl)) { S.coins -= C_.price; S.cos.owned[k] = true; track('buyCos'); S.cos.worn[sl] = id; rebuildFarmer(); toast(`👕 ${C_.name} acheté(e) et porté(e) !`, 'gold'); } break; }
     case 'wear': { const [sl, id] = k.split('.'); if (S.cos.owned[k]) { S.cos.worn[sl] = id; rebuildFarmer(); } break; }
     case 'deliverAll': { let tot = 0, n = 0; for (let j = 0; j < S.orders.length; j++) { const g = deliverOrder(j); if (g) { tot += g; n++; } } if (n) toast(`📦 ${n} commande${n > 1 ? 's' : ''} livrée${n > 1 ? 's' : ''} ! +${fmtN(tot)} 🪙`, 'gold'); else toast('Aucune commande ne peut être livrée avec ton sac actuel.'); break; }
+    case 'wsCancel': { const r = wsCancel(k, i); if (r) toast(`✖ ${ITEMS[r.out].name} annulé : ingrédients rendus.`); break; }
+    case 'buyGM': { const [b, m] = k.split('.'), c = GARDEN_MACHINES[m].cost(b); if (!(S.gmach[b] && S.gmach[b][m]) && zoneOpen(b) && canPay(c)) { pay(c); (S.gmach[b] = S.gmach[b] || {})[m] = true; S.gmOn[b + m] = true; toast(`${GARDEN_MACHINES[m].icon} ${GARDEN_MACHINES[m].name} installé dans le ${GARDENS[b].name.toLowerCase()} !`, 'gold'); } break; }
+    case 'toggleGM': S.gmOn[k] = S.gmOn[k] === false; break;
     case 'wsSlot': { const W = WORKSHOPS[k], w = S.workshops[k], c = wsSlotCost(W); if (w && w.n < 2 && canPay(c)) { pay(c); w.n = 2; w.slots.push({ job: null, progress: 0, ready: false, last: null }); toast(`🏭 ${W.name} : second poste installé !`, 'gold'); } break; }
     case 'sell1': { const g = sell(k, 1); if (g) toast(`+${g} 🪙`); break; }
     case 'sellAll': { const g = sell(k, have(k)); if (g) toast(`+${fmtN(g)} 🪙`); break; }

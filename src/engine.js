@@ -15,7 +15,7 @@ const SPR = {
   fly: ['#ff8fb1', '#ffd93b', '#9fd3f5', '#c7a6ff'].map(c => [butterflySprite(c, 0), butterflySprite(c, 1)]),
 };
 const HUMANS = { farmer: PAL.farmer }; NPCS.forEach(n => HUMANS[n.id] = PAL[n.id]); for (const [id, w] of Object.entries(WORKERS)) HUMANS[id] = w.pal;
-SPR.sprinkler = [sprinklerSprite(0), sprinklerSprite(1)]; SPR.ladder = ladderSprite(); SPR.torchF = [torchSprite(0), torchSprite(1)]; SPR.torch = SPR.torchF[0]; SPR.site = siteSprite(); SPR.minehut = cottageSprite('#5b5470', '#433d55', '#b9b0a8'); SPR.harvester = harvesterSprite(); SPR.seeder = seederSprite(); SPR.trough = [troughSprite(false), troughSprite(true)]; SPR.basket = basketSprite();
+SPR.sprinkler = [sprinklerSprite(0), sprinklerSprite(1)]; SPR.soil = { foret: [themedSoil('foret', false), themedSoil('foret', true)], plage: [themedSoil('plage', false), themedSoil('plage', true)], montagne: [themedSoil('montagne', false), themedSoil('montagne', true)] }; SPR.ladder = ladderSprite(); SPR.torchF = [torchSprite(0), torchSprite(1)]; SPR.torch = SPR.torchF[0]; SPR.site = siteSprite(); SPR.minehut = cottageSprite('#5b5470', '#433d55', '#b9b0a8'); SPR.harvester = harvesterSprite(); SPR.seeder = seederSprite(); SPR.trough = [troughSprite(false), troughSprite(true)]; SPR.basket = basketSprite();
 for (const [id, pal] of Object.entries(HUMANS)) {
   SPR.npc[id] = {}; ['down', 'up', 'left', 'right'].forEach(d => SPR.npc[id][d] = [0, 1, 2, 3].map(f => humanSprite(d, f, pal)));
   SPR.portrait[id] = toURL(portraitSprite(pal), 3);
@@ -50,7 +50,7 @@ for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
 // ============================================================
 const tileAt = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? T.CLIFF : map[y][x];
 const groundCol = b => b === 'foret' ? '#3f7f35' : b === 'montagne' ? '#e9f1f7' : b === 'plage' ? C.sand : C.grass;
-const HARD = new Set([T.PATH, T.STONE, T.WATER, T.SAND, T.PIER, T.BRIDGE, T.CLIFF, T.PLOT]);
+const HARD = new Set([T.PATH, T.STONE, T.WATER, T.SAND, T.PIER, T.BRIDGE, T.CLIFF, T.PLOT, T.WALL]);
 function sandTile(A, x, y) {
   const R = rng(hash(x, y) + 5);
   A.r(0, 0, 16, 16, C.sand);
@@ -96,6 +96,7 @@ function drawGroundTile(g, x, y) {
   } else {
     base();
     if (t === T.FLOWER) flowerOverlay(A, x, y);
+    if (t === T.WALL) { const w = (a, c) => tileAt(a, c) === T.WALL; wallTileDraw(A, x, y, { l: w(x - 1, y), r: w(x + 1, y), u: w(x, y - 1), d: w(x, y + 1) }); }
     if (t === T.FENCE) {
       const fe = (a, c) => tileAt(a, c) === T.FENCE;
       A.r(3, 14, 10, 1, '#4a8a35');
@@ -124,7 +125,7 @@ function buildMini() {
     if (buildingAt(x, y)) return '#b5453a';
     switch (t) {
       case T.WATER: return '#3d8fd6'; case T.PATH: return '#d8b47c'; case T.STONE: return '#bdb7ae'; case T.SAND: return '#ecd79a';
-      case T.CLIFF: return '#6b6d74'; case T.PLOT: return '#8a5d3b'; case T.FENCE: return '#9a6434'; case T.PIER: case T.BRIDGE: return '#9a6434';
+      case T.CLIFF: return '#6b6d74'; case T.WALL: return '#8d8f96'; case T.PLOT: return '#8a5d3b'; case T.FENCE: return '#9a6434'; case T.PIER: case T.BRIDGE: return '#9a6434';
       case T.TREE: return b === 'foret' ? '#1f4f1c' : '#2f6d2a'; case T.PINE: return '#2e5a3a'; case T.PALM: return '#3f9b3c'; case T.ROCK: return '#8d8f96';
     }
     return b === 'foret' ? '#3f7f35' : b === 'montagne' ? '#e9f1f7' : b === 'plage' ? '#ecd79a' : '#6cb84b';
@@ -142,6 +143,8 @@ const newGardens = () => Object.fromEntries(Object.entries(GARDENS).map(([b, g])
 const newCos = () => ({ owned: { 'hat.straw': true, 'hat.none': true, 'shirt.red': true, 'pants.blue': true, 'hair.brown': true }, worn: { hat: 'straw', shirt: 'red', pants: 'blue', hair: 'brown' } });
 function migrate() {
   if (!S.gardens || !S.gardens.foret) S.gardens = newGardens();
+  for (const [b, g] of Object.entries(GARDENS)) { const a = S.gardens[b] || (S.gardens[b] = []); while (a.length < g.w * g.h) a.push(newPlot()); }
+  if (!S.gmach) S.gmach = {}; if (!S.gmOn) S.gmOn = {};
   if (!S.cos || !S.cos.owned) S.cos = newCos();
   if (!S.equip) S.equip = [null, null, null];
   if (!S.buffs) S.buffs = {}; if (!S.ach) S.ach = {}; if (!S.timed) S.timed = {}; if (!S.gsel) S.gsel = {};
@@ -532,6 +535,7 @@ function getTarget() {
 function tileTarget(tx, ty) {
   const g = gateAt(tx, ty); if (g) return gateTarget(g);
   if (tileAt(tx, ty) === T.FENCE && tx >= FIELD.x - 1 && tx <= FIELD.x + FIELD.w && ty >= FIELD.y - 1 && ty <= FIELD.y + FIELD.h && !machineAt(tx, ty)) return { tx, ty, label: '🌾 Plan du champ', fn: () => openPanel('plan') };
+  const gm = gardenMachineAt(tx, ty); if (gm) return { tx, ty, label: `${GARDEN_MACHINES[gm.k].icon} ${GARDEN_MACHINES[gm.k].name} — réglages`, fn: () => openPanel('home', GARDENS[gm.b].home) };
   const m = machineAt(tx, ty); if (m) return { tx, ty, label: `${MACHINES[m].icon} ${MACHINES[m].name}${S.mOn[m] === false ? ' (éteint)' : ''} — réglages`, fn: () => openPanel('machines') };
   const b = buildingAt(tx, ty); if (b) return buildingTarget(b);
   const n = nodeAt(tx, ty); if (n) return nodeTarget(n);
@@ -812,6 +816,11 @@ function wsStart(k, ri, i) {
   const sl = i != null ? w.slots[i] : w.slots.find(s => s.job == null); if (!sl || sl.job != null) return false;
   takeAll(r.in); Object.assign(sl, { job: ri, progress: 0, ready: false, last: ri }); return true;
 }
+function wsCancel(k, i) {
+  const sl = S.workshops[k] && S.workshops[k].slots[i]; if (!sl || sl.job == null || sl.ready) return false;
+  const r = WORKSHOPS[k].recipes[sl.job]; for (const [it, q] of Object.entries(r.in)) addItem(it, q);
+  Object.assign(sl, { job: null, progress: 0, ready: false, last: null }); return r;
+}
 const wsReady = w => w && w.slots.some(s => s.ready);
 const wsBusy = w => w && w.slots.some(s => s.job != null && !s.ready);
 function autoWorkshops() {
@@ -1003,3 +1012,66 @@ function checkLevelQuests() {
   for (const q of S.lq.list) if (!q.done && cnt(q.ev, q.k) - q.base >= q.n) { q.done = true; giveReward(q.r); toast(`⭐ Défi réussi : ${q.t}  ${rewardText(q.r)}`, 'gold'); }
   if (S.lq.list.length && !S.lq.bonus && S.lq.list.every(q => q.done)) { S.lq.bonus = true; const b = 100 * S.level; S.coins += b; toast(`🏅 Tous les défis du niveau ${S.level} ! +${fmtN(b)} 🪙`, 'gold'); }
 }
+
+// ============================================================
+//  AUTOMATISATION DES JARDINS DE BIOME
+// ============================================================
+const gmOn = (b, k) => !!(S.gmach[b] && S.gmach[b][k]) && !(S.gmOn[b + k] === false);
+const gardenPos = (b, i) => { const g = GARDENS[b]; return [g.x + i % g.w, g.y + Math.floor(i / g.w)]; };
+function gardenMachineAt(x, y) {
+  for (const [b, g] of Object.entries(GARDENS)) {
+    if (S.gmach[b] && S.gmach[b].arroseur && x === g.x - 1 && y === g.y + 1) return { b, k: 'arroseur' };
+    if (S.gmach[b] && S.gmach[b].recolteur && x === g.x + g.w && y === g.y + 1) return { b, k: 'recolteur' };
+  }
+  return null;
+}
+function gAutoWater(b, i) { const p = S.gardens[b][i]; if (p.crop && p.progress < 1 && !p.watered) { p.watered = true; track('water'); return true; } return false; }
+function gAutoHarvest(b, i) {
+  const p = S.gardens[b][i]; if (!p.crop || p.progress < 1) return false;
+  const k = p.crop, q = lucky() ? 2 : 1; addItem(k, q); track('harvest', k, q); addXp(CROPS[k].xp); S.stats.harvested++;
+  Object.assign(p, newPlot(), { last: k }); return k;
+}
+function gAutoReplant(b, i) {
+  const p = S.gardens[b][i], k = p.last; if (p.crop || !k) return false;
+  const c = CROPS[k]; if (S.level < c.lvl || S.coins < c.seed) return false;
+  S.coins -= c.seed; track('plant', k); Object.assign(p, { crop: k, progress: 0, watered: S.weather === 'rain' }); return true;
+}
+function gardenStep(dt, offline) {
+  for (const b of Object.keys(GARDENS)) {
+    if (!zoneOpen(b)) continue;
+    const n = S.gardens[b].length;
+    if (gmOn(b, 'arroseur')) for (let i = 0; i < n; i++) gAutoWater(b, i);
+    if (gmOn(b, 'recolteur')) { let r = rate('grec_' + b, GARDEN_MACHINES.recolteur.period / buffVal('machine'), dt); for (let i = 0; i < n && r > 0; i++) { const k = gAutoHarvest(b, i); if (k) { r--; if (!offline) { const [tx, ty] = gardenPos(b, i); emit((tx + .5) * TILE, (ty + .5) * TILE, 8, { col: [ITEMS[k].col, '#e8c55a'], speed: 40, life: .5, grav: 90 }); } } if (gAutoReplant(b, i)) r--; } }
+  }
+}
+// Jardiniers (tâches visibles) — branchés sur l'IA générale des employés
+const _findTask = findTask, _doTask = doTask;
+findTask = function (id, r) {
+  const z = WORKERS[id].zone; if (!z.startsWith('g_')) return _findTask(id, r);
+  const b = z.slice(2); let best = null, bd = 1e9;
+  S.gardens[b].forEach((p, i) => {
+    const want = (p.crop && p.progress >= 1) || (p.crop && p.progress < 1 && !p.watered) || (!p.crop && p.last && S.coins >= CROPS[p.last].seed && S.level >= CROPS[p.last].lvl);
+    if (!want) return; const [tx, ty] = gardenPos(b, i), d = Math.hypot(tx + .5 - r.x, ty + .55 - r.y);
+    if (d < bd) { bd = d; best = { x: tx + .5, y: ty + .55, gb: b, gi: i }; }
+  });
+  return best;
+};
+doTask = function (id, t) {
+  if (t.gb == null) return _doTask(id, t);
+  let ok = false; const [tx, ty] = gardenPos(t.gb, t.gi);
+  const k = gAutoHarvest(t.gb, t.gi); if (k) { ok = true; emit((tx + .5) * TILE, (ty + .5) * TILE, 8, { col: [ITEMS[k].col, '#7bd06b'], speed: 40, life: .5, grav: 100 }); }
+  if (gAutoReplant(t.gb, t.gi)) ok = true;
+  if (gAutoWater(t.gb, t.gi)) { ok = true; emit((tx + .5) * TILE, (ty + .3) * TILE, 8, { col: ['#8cc8f0', '#d8f1ff'], speed: 35, life: .5, grav: 140, angle: Math.PI / 2, spread: 2.4 }); }
+  if (ok) staffGain(id);
+};
+const _autoStep = autoStep;
+autoStep = function (dt, offline) {
+  _autoStep(dt, offline);
+  gardenStep(dt, offline);
+  if (offline) for (const id of activeWorkers()) {
+    const z = WORKERS[id].zone; if (!z.startsWith('g_')) continue;
+    const b = z.slice(2), cap = Math.max(1, Math.round(dt * staffSpeed(staffOf(id).lvl) / 2.2)); let n = 0;
+    for (let i = 0; i < S.gardens[b].length && n < cap; i++) { if (gAutoHarvest(b, i)) n++; if (gAutoReplant(b, i)) n++; if (gAutoWater(b, i)) n++; }
+    if (n) staffGain(id, n);
+  }
+};

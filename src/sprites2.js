@@ -514,3 +514,27 @@ Object.assign(ICON_DRAW, {
   superengrais: P => { P.r(4, 4, 8, 11, '#f2c94c'); P.r(4, 4, 8, 2, '#c99a1c'); P.r(5, 2, 6, 2, '#ffe08a'); P.r(6, 8, 4, 4, '#f4efe4'); P.p(7, 9, '#43a047'); P.p(8, 10, '#43a047'); P.p(13, 3, '#fff'); P.p(2, 6, '#fff'); },
   cafe: P => { P.r(3, 6, 9, 8, '#f4efe4'); P.r(12, 8, 2, 4, '#f4efe4'); P.r(4, 7, 7, 2, '#6e4520'); P.r(3, 14, 10, 1, '#d8ccb2'); P.r(5, 2, 1, 3, '#ffffffaa'); P.r(8, 1, 1, 4, '#ffffffaa'); },
 });
+
+// Terres des jardins de biome
+function themedSoil(theme, wet) {
+  const pal = {
+    foret:    wet ? ['#3a2a1c', '#2c2015', '#4a3624', '#4c9a3f'] : ['#5a4030', '#46321f', '#6e5038', '#5fa843'],
+    plage:    wet ? ['#a08458', '#8a7048', '#b49868', '#d8c08a'] : ['#c9ad78', '#b39664', '#dcc290', '#ecd79a'],
+    montagne: wet ? ['#4f4a52', '#3f3a42', '#625c66', '#e9f1f7'] : ['#6e6870', '#5a545c', '#837c86', '#ffffff'],
+  }[theme];
+  return mk(16, 16, P => {
+    const [b, d, l, x] = pal;
+    P.r(0, 0, 16, 16, b); P.r(0, 0, 16, 1, l); P.r(0, 0, 1, 16, l); P.r(0, 15, 16, 1, d); P.r(15, 0, 1, 16, d);
+    [3, 7, 11].forEach(y => { P.r(2, y, 12, 1, d); P.r(2, y + 1, 12, 1, l); });
+    const R = rng(theme.length * 7 + (wet ? 3 : 1));
+    for (let i = 0; i < 5; i++) P.p(1 + (R() * 14 | 0), 1 + (R() * 14 | 0), x);
+  }, null);
+}
+function wallTileDraw(A, x, y, conn) {
+  A.r(2, 3, 12, 11, '#8d8f96');
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) { const ox = 2 + c * 4 + (r % 2 ? 2 : 0), oy = 3 + r * 4; A.r(Math.min(ox, 13), oy, 3, 3, ['#9a9ca2', '#a3a5ab', '#8a8c92'][(r + c) % 3]); }
+  if (conn.l) A.r(0, 5, 3, 8, '#8d8f96'); if (conn.r) A.r(13, 5, 3, 8, '#8d8f96');
+  if (conn.u) A.r(4, 0, 8, 4, '#8d8f96'); if (conn.d) A.r(4, 13, 8, 3, '#8d8f96');
+  A.r(2, 2, 12, 2, '#f2f6fa'); if (conn.l) A.r(0, 4, 3, 1, '#f2f6fa'); if (conn.r) A.r(13, 4, 3, 1, '#f2f6fa');
+  A.r(2, 13, 12, 1, '#6b6d74');
+}

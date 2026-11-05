@@ -85,10 +85,16 @@ const CROPS = {
   edelweiss:  { seed: 90, time: 720, xp: 13, lvl: 9, biome: 'montagne' },
 };
 const CROP_KEYS = Object.keys(CROPS).filter(k => !CROPS[k].biome);
+// Jardins de biome : 12 parcelles chacun, clôturés, avec une entrée tournée vers le chemin
 const GARDENS = {
-  foret:    { name: 'Jardin des sous-bois', x: 33, y: 9,  w: 4, h: 2 },
-  plage:    { name: 'Jardin de la plage',   x: 8,  y: 50, w: 4, h: 2 },
-  montagne: { name: 'Jardin des neiges',    x: 64, y: 18, w: 4, h: 2 },
+  foret:    { name: 'Jardin des sous-bois', x: 32, y: 10, w: 4, h: 3, gate: 'top',    home: 'cabin' },
+  plage:    { name: 'Jardin de la plage',   x: 7,  y: 48, w: 4, h: 3, gate: 'bottom', home: 'hut' },
+  montagne: { name: 'Jardin des neiges',    x: 64, y: 16, w: 4, h: 3, gate: 'bottom', home: 'minehut' },
+};
+const GARDEN_MACHINES = {
+  arroseur:  { name: 'Arroseur de jardin', icon: '💦', desc: 'Arrose instantanément les 12 parcelles du jardin.', cost: b => ({ coins: 350, bois: 15, ...(b === 'montagne' ? { fer: 4 } : {}) }) },
+  recolteur: { name: 'Récolteur de jardin', icon: '🧺', desc: 'Récolte les plantes mûres et replante la même espèce. 1 parcelle toutes les 4 s.', period: 4,
+               cost: b => ({ coins: 900, bois: 25, ...(b === 'montagne' ? { fer: 8 } : { pierre: 0 }) }) },
 };
 const GARDEN_CROPS = {}; for (const [k, c] of Object.entries(CROPS)) if (c.biome) (GARDEN_CROPS[c.biome] = GARDEN_CROPS[c.biome] || []).push(k);
 const ANIMALS = {
@@ -134,8 +140,8 @@ const MAX_LEVEL = 10;
 //  CARTE
 // ============================================================
 const TILE = 16, PX = 3, MW = 100, MH = 60, VW_TILES = 80; // la mine est à droite (x ≥ 80), invisible depuis la vallée
-const T = { GRASS: 0, PATH: 1, WATER: 2, TREE: 3, FENCE: 4, PLOT: 5, FLOWER: 6, SAND: 7, BUSH: 8, TALL: 9, STONE: 12, ROCK: 13, PIER: 14, BRIDGE: 15, CLIFF: 16, PINE: 17, PALM: 18 };
-const SOLID = new Set([T.WATER, T.TREE, T.FENCE, T.BUSH, T.ROCK, T.CLIFF, T.PINE, T.PALM]);
+const T = { GRASS: 0, PATH: 1, WATER: 2, TREE: 3, FENCE: 4, PLOT: 5, FLOWER: 6, SAND: 7, BUSH: 8, TALL: 9, STONE: 12, ROCK: 13, PIER: 14, BRIDGE: 15, CLIFF: 16, PINE: 17, PALM: 18, WALL: 19 };
+const SOLID = new Set([T.WATER, T.TREE, T.FENCE, T.BUSH, T.ROCK, T.CLIFF, T.PINE, T.PALM, T.WALL]);
 const ZONES = {
   ferme:    { name: 'La ferme',             icon: '🏡', col: '#7cc35a', lvl: 1 },
   village:  { name: 'Bourg-Joli',           icon: '🏘️', col: '#c8b48a', lvl: 1 },
@@ -375,8 +381,15 @@ function buildMap() {
   for (let y = 47; y <= 54; y++) for (let x = 1; x <= 60; x++) if (get(x, y) === T.GRASS) set(x, y, T.SAND);
 
   // Jardins de biome
-  for (const g of Object.values(GARDENS)) for (let y = g.y; y < g.y + g.h; y++) for (let x = g.x; x < g.x + g.w; x++) set(x, y, T.PLOT);
-  rect(32, 8, 38, 8, T.PATH);
+  for (const [b, g] of Object.entries(GARDENS)) {
+    const ft = b === 'montagne' ? T.WALL : T.FENCE;
+    for (let x = g.x - 1; x <= g.x + g.w; x++) { set(x, g.y - 1, ft); set(x, g.y + g.h, ft); }
+    for (let y = g.y - 1; y <= g.y + g.h; y++) { set(g.x - 1, y, ft); set(g.x + g.w, y, ft); }
+    for (let y = g.y; y < g.y + g.h; y++) for (let x = g.x; x < g.x + g.w; x++) set(x, y, T.PLOT);
+    const gy = g.gate === 'top' ? g.y - 1 : g.y + g.h, gt = b === 'montagne' ? T.STONE : T.PATH;
+    set(g.x + 1, gy, gt); set(g.x + 2, gy, gt);
+  }
+  rect(33, 9, 34, 9, T.PATH);
   // ----- Zones réservées (pas de décor) -----
   const reserved = new Set();
   const reserve = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) reserved.add(x + ',' + y); };
@@ -384,7 +397,7 @@ function buildMap() {
   reserve(FIELD.x - 2, FIELD.y - 2, FIELD.x + FIELD.w + 1, FIELD.y + FIELD.h + 2);
   reserve(PEN.x - 1, PEN.y - 1, PEN.x + PEN.w, PEN.y + PEN.h);
   reserve(42, 25, 61, 44); reserve(26, 20, 41, 28);
-  for (const g of Object.values(GARDENS)) reserve(g.x - 1, g.y - 1, g.x + g.w, g.y + g.h + 1);
+  for (const g of Object.values(GARDENS)) reserve(g.x - 2, g.y - 2, g.x + g.w + 1, g.y + g.h + 1);
   reserve(37, 9, 44, 14); reserve(72, 21, 77, 28);
   for (const g of Object.values(GATES)) reserve(g.x - 2, g.y - 2, g.x + g.w + 1, g.y + g.h + 1);
   // distance au chemin
@@ -495,6 +508,16 @@ const WORKERS = {
   nina:    { home: 'mairie', name: 'Nina', role: 'Apprentie artisane', icon: '🏭', lvl: 6, hire: 700, wage: 80, zone: 'workshop', period: 5,
              desc: 'Fait le tour des ateliers : récupère les produits et relance la dernière recette.', pal: P_('#f0c4a0', '#2b1d10', 'bun', null, null, '#e6e2d8', '#c4bfb2', 'dress', '#8a5a2c', '#6e4520'),
              lines: ['Hugo m\'apprend tout ce qu\'il sait !', 'Je relance la dernière recette de chaque atelier si les ingrédients sont dans ton sac.', 'Ça sent bon le pain chaud ici.'] },
+  // Jardiniers de biome
+  mila:    { home: 'cabin', name: 'Mila', role: 'Jardinière des sous-bois', icon: '🍄', lvl: 4, hire: 350, wage: 40, zone: 'g_foret', need: 'foret',
+             desc: 'Arrose, récolte et replante le jardin de la forêt.', pal: P_('#f0c4a0', '#5a3a1a', 'beanie', '#6c3483', '#4a235a', '#7cb342', '#5d8f2f', 'overalls', '#7a4a24', '#5a3518'),
+             lines: ['Les cèpes aiment l\'ombre et l\'humidité.', 'Je replante toujours la même chose. Pour changer, plante toi-même une parcelle vide !', 'Ce jardin sent bon la mousse.'] },
+  noe:     { home: 'hut', name: 'Noé', role: 'Jardinier de la plage', icon: '🍈', lvl: 5, hire: 450, wage: 50, zone: 'g_plage', need: 'pont',
+             desc: 'Arrose, récolte et replante le jardin de la plage.', pal: P_('#c98e62', '#1e1610', 'straw', '#e8c35a', '#c9a23a', '#5fa3c8', '#4a8ab0', 'pants', '#e6cf8f', '#c9b070', { hatL: '#f7e3a0', band: '#2c6fb6' }),
+             lines: ['Le soleil, le sable, les melons… le paradis !', 'La vanille, c\'est long à pousser, mais ça vaut de l\'or.', 'Attention aux crabes !'] },
+  olga:    { home: 'minehut', name: 'Olga', role: 'Jardinière des neiges', icon: '🌿', lvl: 8, hire: 700, wage: 70, zone: 'g_montagne', need: 'mont',
+             desc: 'Arrose, récolte et replante le jardin des neiges.', pal: P_('#f5cfa8', '#e8e8e8', 'beanie', '#c0392b', '#962d22', '#3d7fd6', '#2c5fa8', 'pants', '#3a3a44', '#2a2a33'),
+             lines: ['Le houx adore le froid.', 'Un edelweiss, c\'est rare et précieux. Je les bichonne.', 'Brrr… heureusement que le muret coupe le vent.'] },
   felix:   { home: 'mairie', name: 'Félix', role: 'Livreur', icon: '📦', lvl: 6, hire: 500, wage: 50, zone: 'village', period: 20,
              desc: 'Livre tout seul une commande du tableau dès que ton sac contient ce qu\'il faut.', pal: P_('#e8b48a', '#c0602a', 'cap', '#f39c12', '#c27c0e', '#2c6fb6', '#1f4e8c', 'pants', '#5a4630', '#463624'),
              lines: ['Une commande prête ? Je file la livrer !', 'Je connais tout le monde au bourg.', 'Plus je livre, plus je vais vite.'] },
@@ -522,9 +545,9 @@ const WORKERS = {
 };
 const HOMES = {
   mairie:  { name: 'Mairie — bureau d\'embauche', icon: '🏛️', npc: 'rose' },
-  cabin:   { name: 'Cabane du forestier', icon: '🌲', npc: 'sylvain', tool: 'hache' },
-  hut:     { name: 'Cabane du port', icon: '⚓', npc: 'marin', tool: 'canne' },
-  minehut: { name: 'Cabane d\'Agathe', icon: '⛏️', npc: 'agathe', tool: 'pioche' },
+  cabin:   { name: 'Cabane du forestier', icon: '🌲', npc: 'sylvain', tool: 'hache', garden: 'foret' },
+  hut:     { name: 'Cabane du port', icon: '⚓', npc: 'marin', tool: 'canne', garden: 'plage' },
+  minehut: { name: 'Cabane d\'Agathe', icon: '⛏️', npc: 'agathe', tool: 'pioche', garden: 'montagne' },
 };
 const TOOLS = {
   hache:  { name: 'Hache', icon: '🪓', desc: ['Ramassage normal.', '+1 bois par branche.', '+2 bois par branche, champignons doublés.'],
@@ -534,7 +557,7 @@ const TOOLS = {
   pioche: { name: 'Pioche', icon: '⛏️', desc: ['Pioche rouillée.', '1 coup de moins par rocher, +1 minerai parfois.', '2 coups de moins, minerai bonus fréquent.'],
             ups: [{ lvl: 8, coins: 600, pierre: 20, fer: 5 }, { lvl: 9, coins: 1800, fer: 15, cristal: 2 }] },
 };
-const ZONE_HOME = { village: [48.5, 40.4], field: [18.5, 29.2], pen: [12, 39], workshop: [52.6, 40.6], forest: [27.5, 8.6], beach: [36, 52.6], mine: [89.5, 30] };
+const ZONE_HOME = { g_foret: [33.5, 9.4], g_plage: [8.5, 51.6], g_montagne: [65.5, 20.4], village: [48.5, 40.4], field: [18.5, 29.2], pen: [12, 39], workshop: [52.6, 40.6], forest: [27.5, 8.6], beach: [36, 52.6], mine: [89.5, 30] };
 
 // ============================================================
 //  DÉFIS DE NIVEAU
@@ -673,3 +696,5 @@ const ACHIEVEMENTS = [
   { id: 't_recolte', cat: '⚡ Exploits', t: 'Moisson éclair',       d: 'Récolte 16 cultures toi-même en 15 secondes', timed: ['harvest', 15], n: 16, r: { coins: 600 } },
 ];
 const ACH_SLOT3 = 15;  // objectifs pour débloquer le 3e emplacement de bijou
+
+NPCS.find(n => n.id === 'sylvain').lines.push('Mon jardin peut tourner tout seul : un arroseur, un récolteur, ou Mila, une jardinière que je connais bien.');
